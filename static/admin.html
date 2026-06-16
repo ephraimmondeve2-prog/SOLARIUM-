@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soléo — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#15122a;--bg2:#1d183a;--panel:rgba(255,255,255,.05);--line:rgba(255,255,255,.1);
+    --sun:#ffb02e;--green:#34d399;--red:#ff7a7a;--ink:#f5efe6;--dim:#a59cba;--faint:#6f6788}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,var(--bg),var(--bg2));
+    color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:620px;margin:0 auto;padding:22px 16px 60px}
+  h1{font-family:'Sora';font-weight:800;font-size:22px;letter-spacing:-.02em;margin-bottom:3px}
+  h1 span{color:var(--sun)}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:16px;margin-bottom:14px}
+  input{width:100%;background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:11px;
+    padding:12px 13px;color:var(--ink);font-size:16px;font-family:'Inter'}
+  input:focus{outline:none;border-color:var(--sun)}
+  .btn{border:0;border-radius:11px;font-family:'Sora';font-weight:700;font-size:14px;padding:11px 15px;cursor:pointer}
+  .btn-gold{background:linear-gradient(180deg,var(--sun),#ff8a3d);color:#2a1500;width:100%;margin-top:10px}
+  .btn-ok{background:rgba(52,211,153,.16);color:var(--green);border:1px solid rgba(52,211,153,.4)}
+  .btn-no{background:rgba(255,122,122,.12);color:var(--red);border:1px solid rgba(255,122,122,.35)}
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tabs button{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--dim);
+    font-family:'Sora';font-weight:600;font-size:13px;padding:10px;border-radius:11px;cursor:pointer}
+  .tabs button.on{background:rgba(255,176,46,.14);color:var(--sun);border-color:rgba(255,176,46,.4)}
+  .row{background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:12px;padding:13px;margin-bottom:10px}
+  .ref{font-family:'JetBrains Mono';font-weight:700;font-size:15px;color:var(--sun)}
+  .meta{font-size:12.5px;color:var(--dim);margin-top:4px;line-height:1.5}
+  .meta b{color:var(--ink)}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;margin-left:6px}
+  .p-wait{background:rgba(255,176,46,.16);color:var(--sun)}
+  .p-ok{background:rgba(52,211,153,.16);color:var(--green)}
+  .p-no{background:rgba(255,122,122,.14);color:var(--red)}
+  .actions{display:flex;gap:8px;margin-top:11px}
+  .actions .btn{flex:1}
+  .empty{color:var(--faint);font-size:13px;text-align:center;padding:20px}
+  .err{color:var(--red);font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sol<span>éo</span> · Admin</h1>
+  <div class="sub">Validez les paiements et consultez les leads.</div>
+
+  <div class="card" id="auth">
+    <input type="password" id="token" placeholder="Votre token admin" autocomplete="off">
+    <button class="btn btn-gold" id="login">Se connecter</button>
+    <div class="err" id="authErr"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="tabs">
+      <button id="tabPay" class="on">Paiements</button>
+      <button id="tabLeads">Leads</button>
+    </div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  let token="", tab="pay";
+
+  const fmt=n=>(n==null?"—":Number(n).toLocaleString("fr-FR"));
+  const esc=s=>(s==null?"":String(s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])));
+
+  async function api(path, opts){
+    const sep = path.includes("?") ? "&" : "?";
+    const r = await fetch(path+sep+"token="+encodeURIComponent(token), opts);
+    return r.json();
+  }
+
+  $("login").addEventListener("click", async ()=>{
+    token = $("token").value.trim();
+    if(!token){ $("authErr").textContent="Entrez votre token."; return; }
+    const d = await api("/api/admin/requests");
+    if(d.ok){ $("auth").style.display="none"; $("app").style.display="block"; render(d.demandes); }
+    else $("authErr").textContent = d.error || "Token invalide.";
+  });
+
+  $("tabPay").addEventListener("click",()=>{tab="pay";setTabs();load();});
+  $("tabLeads").addEventListener("click",()=>{tab="leads";setTabs();load();});
+  function setTabs(){ $("tabPay").classList.toggle("on",tab==="pay"); $("tabLeads").classList.toggle("on",tab==="leads"); }
+
+  async function load(){
+    if(tab==="pay"){ const d=await api("/api/admin/requests"); render(d.demandes||[]); }
+    else { const d=await api("/api/admin/leads"); renderLeads(d.leads||[]); }
+  }
+
+  function statutPill(r){
+    if(r.paye) return '<span class="pill p-ok">payé</span>';
+    if(r.statut==="rejete") return '<span class="pill p-no">rejeté</span>';
+    return '<span class="pill p-wait">en attente</span>';
+  }
+
+  function render(rows){
+    if(!rows.length){ $("list").innerHTML='<div class="empty">Aucune demande pour l\'instant.</div>'; return; }
+    $("list").innerHTML = rows.map(r=>{
+      let p={}; try{p=JSON.parse(r.projet||"{}")}catch(e){}
+      const act = (!r.paye && r.statut!=="rejete")
+        ? `<div class="actions">
+             <button class="btn btn-ok" data-ok="${esc(r.tx_ref)}">✓ Approuver</button>
+             <button class="btn btn-no" data-no="${esc(r.tx_ref)}">Rejeter</button>
+           </div>` : "";
+      return `<div class="row">
+        <span class="ref">${esc(r.tx_ref)}</span>${statutPill(r)}
+        <div class="meta">
+          <b>${fmt(r.montant)} FCFA</b> · ${esc(r.email)} · ${esc(r.telephone||"—")}<br>
+          ${esc(p.ville||"")} · ${p.kwc?("≈"+p.kwc+" kWc"):""} ${p.profil?("· "+esc(p.profil)):""}
+        </div>${act}</div>`;
+    }).join("");
+    bind();
+  }
+
+  function renderLeads(rows){
+    if(!rows.length){ $("list").innerHTML='<div class="empty">Aucun lead pour l\'instant.</div>'; return; }
+    $("list").innerHTML = rows.map(r=>`<div class="row">
+      <span class="ref" style="color:var(--green)">${esc(r.nom)}</span>
+      <div class="meta"><b>${esc(r.telephone)}</b> · ${esc(r.ville||"—")}
+        ${r.kwc?("· ≈"+r.kwc+" kWc"):""} ${r.payback_ans?("· retour "+r.payback_ans+" ans"):""}</div>
+    </div>`).join("");
+  }
+
+  function bind(){
+    document.querySelectorAll("[data-ok]").forEach(b=>b.addEventListener("click",async()=>{
+      b.disabled=true; b.textContent="…";
+      await api("/api/admin/approve",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({reference:b.dataset.ok})});
+      load();
+    }));
+    document.querySelectorAll("[data-no]").forEach(b=>b.addEventListener("click",async()=>{
+      b.disabled=true;
+      await api("/api/admin/reject",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({reference:b.dataset.no})});
+      load();
+    }));
+  }
+})();
+</script>
+</body>
+</html>
